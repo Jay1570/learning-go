@@ -4,52 +4,40 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/Jay1570/learning-go/db"
 	"github.com/Jay1570/learning-go/types"
 )
 
 type Store struct {
-	db *sql.DB
+	db *db.DB
 }
 
-func NewStore(db *sql.DB) *Store {
-	return &Store{db: db}
+func NewStore(sqlDB *sql.DB) *Store {
+	return &Store{db: db.NewDB(sqlDB)}
 }
 
 func (s *Store) GetUserByEmail(email string) (*types.User, error) {
-	rows, err := s.db.Query("SELECT * FROM users WHERE email = ?", email)
-	if err != nil {
-		return nil, err
-	}
+	user, err := db.FindOne[types.User](s.db, "users", &db.QueryOptions{
+		Where: map[string]interface{}{
+			"email": email,
+		},
+	})
 
-	u := new(types.User)
-	for rows.Next() {
-		u, err := scanRowIntoUser(rows)
-		if err != nil {
-			return nil, err
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("user not found")
 		}
-	}
-
-	if u.ID == 0 {
-		return nil, fmt.Errorf("User not found")
-	}
-
-	return u, nil
-}
-
-func scanRowIntoUser(rows *sql.Rows) (*types.User, error) {
-	user := new(types.User)
-
-	err := rows.Scan(
-		&user.ID,
-		&user.FirstName,
-		&user.LastName,
-		&user.Email,
-		&user.Password,
-		&user.CreatedAt,
-	)
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get user by email: %w", err)
 	}
 
 	return user, nil
+}
+
+func (s *Store) GetUserByID(id int) (*types.User, error) {
+	return nil, nil
+}
+
+func (s *Store) CreateUser(user types.User) error {
+	_, err := db.InsertOne[types.User](s.db, "users", user)
+	return err
 }

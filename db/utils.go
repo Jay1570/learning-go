@@ -7,27 +7,20 @@ import (
 	"strings"
 )
 
-type DB struct {
-	*sql.DB
-}
-
-func NewDB(db *sql.DB) *DB {
-	return &DB{DB: db}
-}
-
 type CountResult[T any] struct {
 	Data  []T `json:"data"`
 	Count int `json:"count"`
 }
 
 type QueryOptions struct {
-	Where   map[string]interface{} `json:"where,omitempty"`
-	OrderBy string                 `json:"orderBy,omitempty"`
-	Limit   int                    `json:"limit,omitempty"`
-	Offset  int                    `json:"offset,omitempty"`
+	Where     string        `json:"where,omitempty"`
+	WhereArgs []interface{} `json:"whereArgs,omitempty"`
+	OrderBy   string        `json:"orderBy,omitempty"`
+	Limit     int           `json:"limit,omitempty"`
+	Offset    int           `json:"offset,omitempty"`
 }
 
-func FindAllAndCount[T any](db *DB, tableName string, options *QueryOptions) (*CountResult[T], error) {
+func FindAllAndCount[T any](db *sql.DB, tableName string, options *QueryOptions) (*CountResult[T], error) {
 	var result CountResult[T]
 
 	whereClause, args := buildWhereClause(options)
@@ -53,7 +46,7 @@ func FindAllAndCount[T any](db *DB, tableName string, options *QueryOptions) (*C
 	return &result, nil
 }
 
-func FindAll[T any](db *DB, tableName string, options *QueryOptions) ([]T, error) {
+func FindAll[T any](db *sql.DB, tableName string, options *QueryOptions) ([]T, error) {
 	whereClause, args := buildWhereClause(options)
 	query := buildSelectQuery(tableName, options, whereClause)
 
@@ -66,7 +59,7 @@ func FindAll[T any](db *DB, tableName string, options *QueryOptions) ([]T, error
 	return scanRows[T](rows)
 }
 
-func FindOne[T any](db *DB, tableName string, options *QueryOptions) (*T, error) {
+func FindOne[T any](db *sql.DB, tableName string, options *QueryOptions) (*T, error) {
 	if options == nil {
 		options = &QueryOptions{}
 	}
@@ -84,17 +77,16 @@ func FindOne[T any](db *DB, tableName string, options *QueryOptions) (*T, error)
 	return &records[0], nil
 }
 
-func FindByPK[T any](db *DB, tableName string, pk interface{}) (*T, error) {
+func FindByPK[T any](db *sql.DB, tableName string, pk interface{}) (*T, error) {
 	options := &QueryOptions{
-		Where: map[string]interface{}{
-			"id": pk,
-		},
+		Where:     "id = ?",
+		WhereArgs: []interface{}{pk},
 	}
 
 	return FindOne[T](db, tableName, options)
 }
 
-func InsertOne[T any](db *DB, tableName string, payload interface{}) (int64, error) {
+func InsertOne[T any](db *sql.DB, tableName string, payload interface{}) (int64, error) {
 	columns, placeholders, values := buildInsertData(payload)
 
 	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
@@ -113,43 +105,37 @@ func InsertOne[T any](db *DB, tableName string, payload interface{}) (int64, err
 	return lastID, nil
 }
 
-func BulkInsert[T any](db *DB, tableName string, payloads []interface{}) ([]T, error) {
+func BulkInsert[T any](db *sql.DB, tableName string, payloads []interface{}) (bool, error) {
 	if len(payloads) == 0 {
-		return []T{}, nil
+		return true, nil
 	}
 
 	tx, err := db.Begin()
 	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+		return false, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	var results []T
 	for _, payload := range payloads {
 		columns, placeholders, values := buildInsertData(payload)
 
-		query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s) RETURNING *",
+		query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
 			tableName, strings.Join(columns, ", "), strings.Join(placeholders, ", "))
 
-		row := tx.QueryRow(query, values...)
-
-		var result T
-		err := scanRow(row, &result)
+		_, err := tx.Exec(query, values...)
 		if err != nil {
-			return nil, fmt.Errorf("failed to insert record: %w", err)
+			return false, fmt.Errorf("failed to insert record: %w", err)
 		}
-
-		results = append(results, result)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+		return false, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	return results, nil
+	return true, nil
 }
 
-func UpdateData[T any](db *DB, tableName string, payload interface{}, options *QueryOptions) ([]T, error) {
+func UpdateData[T any](db *sql.DB, tableName string, payload interface{}, options *QueryOptions) ([]T, error) {
 	setClause, setArgs := buildSetClause(payload)
 	whereClause, whereArgs := buildWhereClause(options)
 
@@ -166,7 +152,7 @@ func UpdateData[T any](db *DB, tableName string, payload interface{}, options *Q
 	return scanRows[T](rows)
 }
 
-func DeleteData[T any](db *DB, tableName string, options *QueryOptions) ([]T, error) {
+func DeleteData[T any](db *sql.DB, tableName string, options *QueryOptions) ([]T, error) {
 	whereClause, args := buildWhereClause(options)
 
 	query := fmt.Sprintf("DELETE FROM %s%s RETURNING *", tableName, whereClause)
@@ -181,19 +167,10 @@ func DeleteData[T any](db *DB, tableName string, options *QueryOptions) ([]T, er
 }
 
 func buildWhereClause(options *QueryOptions) (string, []interface{}) {
-	if options == nil || len(options.Where) == 0 {
+	if options == nil || options.Where == "" {
 		return "", nil
 	}
-
-	var conditions []string
-	var args []interface{}
-
-	for column, value := range options.Where {
-		conditions = append(conditions, fmt.Sprintf("%s = ?", column))
-		args = append(args, value)
-	}
-
-	return " WHERE " + strings.Join(conditions, " AND "), args
+	return " WHERE " + options.Where, options.WhereArgs
 }
 
 func buildSelectQuery(tableName string, options *QueryOptions, whereClause string) string {
@@ -308,51 +285,6 @@ func buildSetClause(payload interface{}) (string, []interface{}) {
 	return strings.Join(setParts, ", "), values
 }
 
-func buildSetClauseComplete(payload interface{}) (string, []interface{}) {
-	v := reflect.ValueOf(payload)
-	t := reflect.TypeOf(payload)
-
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
-		t = t.Elem()
-	}
-
-	var setParts []string
-	var values []interface{}
-
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		fieldType := t.Field(i)
-
-		if !field.CanInterface() {
-			continue
-		}
-
-		dbTag := fieldType.Tag.Get("db")
-		if dbTag == "" || dbTag == "-" {
-			continue
-		}
-
-		columnName := strings.Split(dbTag, ",")[0]
-		if columnName == "" {
-			continue
-		}
-
-		if columnName == "id" || columnName == "createdAt" {
-			continue
-		}
-
-		if field.Kind() == reflect.Ptr && field.IsNil() {
-			continue
-		}
-
-		setParts = append(setParts, fmt.Sprintf("%s = ?", columnName))
-		values = append(values, field.Interface())
-	}
-
-	return strings.Join(setParts, ", "), values
-}
-
 func scanRows[T any](rows *sql.Rows) ([]T, error) {
 	var results []T
 
@@ -408,93 +340,3 @@ func scanRow(scanner interface{}, dest interface{}) error {
 
 	return nil
 }
-
-/*
-package main
-
-import (
-    "database/sql"
-    "log"
-    _ "github.com/lib/pq"
-)
-
-func main() {
-
-    sqlDB, err := sql.Open("postgres", "your-connection-string")
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer sqlDB.Close()
-
-    db := NewDB(sqlDB)
-
-
-
-
-    userPayload := RegisterUserPayload{
-        FirstName: "John",
-        LastName:  "Doe",
-        Email:     "john@example.com",
-        Password:  "hashedpassword",
-    }
-
-    user, err := InsertOne[User](db, "users", userPayload)
-    if err != nil {
-        log.Fatal(err)
-    }
-
-
-    foundUser, err := FindOne[User](db, "users", &QueryOptions{
-        Where: map[string]interface{}{
-            "email": "john@example.com",
-        },
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
-
-
-    users, err := FindAll[User](db, "users", &QueryOptions{
-        OrderBy: "created_at DESC",
-        Limit:   10,
-        Offset:  0,
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
-
-
-    result, err := FindAllAndCount[User](db, "users", &QueryOptions{
-        OrderBy: "created_at DESC",
-        Limit:   10,
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
-
-
-    updatePayload := map[string]interface{}{
-        "firstName": "Jane",
-        "lastName":  "Smith",
-    }
-
-    updatedUsers, err := UpdateData[User](db, "users", updatePayload, &QueryOptions{
-        Where: map[string]interface{}{
-            "id": user.ID,
-        },
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
-
-
-    deletedUsers, err := DeleteData[User](db, "users", &QueryOptions{
-        Where: map[string]interface{}{
-            "id": user.ID,
-        },
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
-}
-*/

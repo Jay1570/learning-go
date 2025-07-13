@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/Jay1570/learning-go/config"
 	"github.com/Jay1570/learning-go/services/auth"
 	"github.com/Jay1570/learning-go/types"
 	"github.com/Jay1570/learning-go/utils"
@@ -28,6 +29,41 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	var payload types.LoginUserPayload
+	if err := utils.ParseJSON(r, &payload); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if err := utils.Validate.Struct(payload); err != nil {
+		errors := err.(validator.ValidationErrors)
+		utils.WriteError(w, http.StatusBadRequest, fmt.Errorf("invalid payload: %v", errors))
+		return
+	}
+
+	u, err := h.store.GetUserByEmail(payload.Email)
+	if err != nil {
+		utils.WriteError(w, http.StatusBadRequest, fmt.Errorf("invalid email or password"))
+		return
+	}
+
+	if !auth.ComparePasswords(u.Password, payload.Password) {
+		utils.WriteError(w, http.StatusBadRequest, fmt.Errorf("invalid email or password"))
+		return
+	}
+
+	token, err := auth.CreateJWT(config.Envs.JWTSecret, u.ID)
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	response := map[string]any{
+		"status": http.StatusOK,
+		"token":  token,
+	}
+	utils.WriteJSON(w, response["status"].(int), response)
 }
 
 func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -71,5 +107,9 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.WriteJSON(w, http.StatusCreated, "User registered")
+	response := map[string]any{
+		"status":  http.StatusCreated,
+		"message": "User successfully created",
+	}
+	utils.WriteJSON(w, response["status"].(int), response)
 }

@@ -9,18 +9,17 @@ import (
 )
 
 type Store struct {
-	db *db.DB
+	db *sql.DB
 }
 
-func NewStore(sqlDB *sql.DB) *Store {
-	return &Store{db: db.NewDB(sqlDB)}
+func NewStore(db *sql.DB) *Store {
+	return &Store{db: db}
 }
 
 func (s *Store) GetUserByEmail(email string) (*types.User, error) {
 	user, err := db.FindOne[types.User](s.db, "users", &db.QueryOptions{
-		Where: map[string]interface{}{
-			"email": email,
-		},
+		Where:     "email = ?",
+		WhereArgs: []interface{}{email},
 	})
 
 	if err != nil {

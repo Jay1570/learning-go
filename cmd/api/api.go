@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/Jay1570/learning-go/services/product"
 	"github.com/Jay1570/learning-go/services/user"
 )
 
@@ -27,6 +28,10 @@ func (s *APIServer) Run() error {
 	userStore := user.NewStore(s.db)
 	userHandler := user.NewHandler(userStore)
 	userHandler.RegisterRoutes(subrouter)
+
+	productStore := product.NewStore(s.db)
+	productHandler := product.NewHandler(productStore)
+	productHandler.RegisterRoutes(subrouter)
 
 	router.Handle("/api/", http.StripPrefix("/api/v1", subrouter))
 

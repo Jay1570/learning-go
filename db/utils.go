@@ -297,6 +297,10 @@ func scanRows[T any](rows *sql.Rows) ([]T, error) {
 		results = append(results, item)
 	}
 
+	if results == nil {
+		results = []T{}
+	}
+
 	return results, rows.Err()
 }
 

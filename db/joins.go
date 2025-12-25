@@ -99,7 +99,6 @@ func FindOneWithJoins[T any](db *sql.DB, tableName string, options *QueryOptions
 	if len(records) == 0 {
 		return nil, sql.ErrNoRows
 	}
-
 	return &records[0], nil
 }
 

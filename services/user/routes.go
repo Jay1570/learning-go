@@ -20,16 +20,11 @@ func NewHandler(store types.UserStore) *Handler {
 }
 
 func (h *Handler) RegisterRoutes(router *http.ServeMux) {
-	router.HandleFunc("/login", h.handleLogin)
-	router.HandleFunc("/register", h.handleRegister)
+	router.HandleFunc("POST /login", h.handleLogin)
+	router.HandleFunc("POST /register", h.handleRegister)
 }
 
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	var payload types.LoginUserPayload
 	if err := utils.ParseJSON(r, &payload); err != nil {
 		utils.WriteError(w, http.StatusBadRequest, err)
@@ -67,11 +62,6 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	var payload types.RegisterUserPayload
 	if err := utils.ParseJSON(r, &payload); err != nil {
 		utils.WriteError(w, http.StatusBadRequest, err)

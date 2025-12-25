@@ -33,7 +33,15 @@ func (s *Store) GetUserByEmail(email string) (*types.User, error) {
 }
 
 func (s *Store) GetUserByID(id int) (*types.User, error) {
-	return nil, nil
+	user, err := db.FindByPK[types.User](s.db, "users", id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, fmt.Errorf("failed to get user by id: %w", err)
+	}
+
+	return user, nil
 }
 
 func (s *Store) CreateUser(user types.User) error {

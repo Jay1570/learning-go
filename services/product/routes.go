@@ -4,39 +4,32 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/Jay1570/learning-go/services/auth"
 	"github.com/Jay1570/learning-go/types"
 	"github.com/Jay1570/learning-go/utils"
 	"github.com/go-playground/validator/v10"
 )
 
 type Handler struct {
-	store types.ProductStore
+	store     types.ProductStore
+	userStore types.UserStore
 }
 
-func NewHandler(store types.ProductStore) *Handler {
-	return &Handler{store: store}
+func NewHandler(store types.ProductStore, userStore types.UserStore) *Handler {
+	return &Handler{store: store, userStore: userStore}
 }
 
 func (h *Handler) RegisterRoutes(router *http.ServeMux) {
-	router.HandleFunc("/products", h.handleProducts)
+	productRouter := http.NewServeMux()
+
+	productRouter.HandleFunc("GET /products", h.handleGetProducts)
+	productRouter.HandleFunc("POST /products", h.handleCreateProduct)
+
+	router.Handle("/", auth.WithJWTAuth(productRouter, h.userStore))
 	// router.HandleFunc("/products", h.handleRegister)
 }
 
-func (h *Handler) handleProducts(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		h.handleGetProducts(w)
-
-	case http.MethodPost:
-		h.handleCreateProduct(w, r)
-
-	default:
-		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return
-	}
-}
-
-func (h *Handler) handleGetProducts(w http.ResponseWriter) {
+func (h *Handler) handleGetProducts(w http.ResponseWriter, r *http.Request) {
 	products, err := h.store.GetProducts()
 	if err != nil {
 		utils.WriteError(w, http.StatusInternalServerError, err)

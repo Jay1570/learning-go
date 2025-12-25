@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/Jay1570/learning-go/services/logging"
 	"github.com/Jay1570/learning-go/services/product"
 	"github.com/Jay1570/learning-go/services/user"
 )
@@ -30,12 +31,12 @@ func (s *APIServer) Run() error {
 	userHandler.RegisterRoutes(subrouter)
 
 	productStore := product.NewStore(s.db)
-	productHandler := product.NewHandler(productStore)
+	productHandler := product.NewHandler(productStore, userStore)
 	productHandler.RegisterRoutes(subrouter)
 
 	router.Handle("/api/", http.StripPrefix("/api/v1", subrouter))
 
 	log.Println("Listening on", s.addr)
 
-	return http.ListenAndServe(s.addr, router)
+	return http.ListenAndServe(s.addr, logging.Logging(router))
 }
